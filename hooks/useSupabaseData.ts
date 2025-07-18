@@ -85,7 +85,7 @@ export function useSupabaseData(user: User | null) {
   }
 
 
-async function getPersonalizedSongs(userId: string, currentSong: Song) {
+async function getPersonalizedSongs(userId: string, currentSong: Song, listenedSongs?: Set<string>) {
   // 1. Fetch all songs
   const { data: songs } = await supabase.from('songs').select('*');
   if (!songs) return [];
@@ -98,7 +98,18 @@ async function getPersonalizedSongs(userId: string, currentSong: Song) {
   const historyMap = new Map(history?.map((h) => [h.song_id, h.minutes_listened]));
 
   const recommendations = songs
-    .filter((song) => song.file_id !== currentSong.file_id) // exclude current song
+    .filter((song) => {
+      // Exclude current song
+      if (song.file_id === currentSong.file_id) return false;
+      
+      // Exclude listened songs if provided
+      if (listenedSongs && listenedSongs.has(song.file_id.toString())) {
+        console.log(`🚫 Excluding listened song: ${song.name} by ${song.artist}`);
+        return false;
+      }
+      
+      return true;
+    })
     .map((song) => {
       let score = 0;
 
@@ -134,7 +145,8 @@ async function getPersonalizedSongs(userId: string, currentSong: Song) {
     .slice(0, 10)
     .map((entry) => entry.song);
 
-  console.log('🎵 Personalized Top 10 Songs:', top5);
+  console.log('🎵 Personalized Top 10 Songs (excluding listened):', top5.map(s => `${s.name} by ${s.artist}`));
+  console.log('🎵 Total listened songs excluded:', listenedSongs ? listenedSongs.size : 0);
   return top5;
 }
 

@@ -73,6 +73,7 @@ function MusicPlayerContent() {
   const [playedSongs, setPlayedSongs] = useState<Set<string>>(new Set())  
   const [personalizedList, setPersonalizedList] = useState<Song[]>([]);
   const [currentSongIndex, setCurrentSongIndex] = useState<number>(0);
+  const [listenedSongs, setListenedSongs] = useState<Set<string>>(new Set());
   
 const loadMoreSongs = () => {
   setDisplayCount(prev => prev + 15);
@@ -97,13 +98,13 @@ useEffect(() => {
 useEffect(() => {
     const fetchRecommendations = async () => {
       if (user && currentSong) {
-        const recommendations = await getPersonalizedSongs(user.id, currentSong)
+        const recommendations = await getPersonalizedSongs(user.id, currentSong, listenedSongs)
         console.log('🎧 Updated Recommendations:', recommendations)
       }
     }
 
     fetchRecommendations()
-  }, [user, currentSong])
+  }, [user, currentSong, listenedSongs])
 
 useEffect(() => {
   if (audioRef.current) {
@@ -172,12 +173,19 @@ useEffect(() => {
 useEffect(() => {
   const loadLastPlayedImage = async () => {
    if (user && lastPlayedSong && !hasSetLastPlayedSong && !lastPlayedSongDismissed) {
-      const initialRecs = await getPersonalizedSongs(user.id, lastPlayedSong);
+      const initialRecs = await getPersonalizedSongs(user.id, lastPlayedSong, listenedSongs);
       const filtered = initialRecs.filter(song => !playedSongs.has(song.file_id));
       setPersonalizedList([lastPlayedSong, ...filtered.slice(0, 5)]);
       setCurrentSong(lastPlayedSong);
       setHasSetLastPlayedSong(true);
 
+      // Add to listened songs and log
+      setListenedSongs(prev => {
+        const newSet = new Set(prev);
+        newSet.add(lastPlayedSong.id);
+        console.log('🎵 Listened Songs List:', Array.from(newSet));
+        return newSet;
+      });
 
       if (!imageUrls[lastPlayedSong.img_id]) {
         const url = `/api/image-proxy?fileid=${lastPlayedSong.img_id}`;
@@ -199,6 +207,14 @@ const handleSongPlay = async (song: Song) => {
   setLastPlayedSongDismissed(false);
   recordListeningHistory(song.id);
 
+  // Add to listened songs and log
+  setListenedSongs(prev => {
+    const newSet = new Set(prev);
+    newSet.add(song.id);
+    console.log('🎵 Listened Songs List:', Array.from(newSet));
+    return newSet;
+  });
+
   setPlayedSongs((prev) => {
     const updated = new Set(prev);
     updated.add(String(song.file_id));
@@ -206,7 +222,7 @@ const handleSongPlay = async (song: Song) => {
   });
 
   if (user) {
-    const recs = await getPersonalizedSongs(user.id, song);
+    const recs = await getPersonalizedSongs(user.id, song, listenedSongs);
     const filtered = recs.filter(s => !playedSongs.has(s.file_id));
     const newPersonalizedList = [song, ...filtered.slice(0, 9)]; // Get more songs
     setPersonalizedList(newPersonalizedList);
@@ -262,6 +278,14 @@ const handlePrevious = () => {
       setIsPlaying(true);
       setLastPlayedSongDismissed(false);
       recordListeningHistory(prevSong.id);
+
+      // Add to listened songs and log
+      setListenedSongs(prev => {
+        const newSet = new Set(prev);
+        newSet.add(prevSong.id);
+        console.log('🎵 Listened Songs List:', Array.from(newSet));
+        return newSet;
+      });
 
       setPlayedSongs((prev) => {
         const updated = new Set(prev);
@@ -340,9 +364,17 @@ const handleNext = async () => {
     setLastPlayedSongDismissed(false);
     recordListeningHistory(nextQueueSong.id);
     
+    // Add to listened songs and log
+    setListenedSongs(prev => {
+      const newSet = new Set(prev);
+      newSet.add(nextQueueSong.id);
+      console.log('🎵 Listened Songs List:', Array.from(newSet));
+      return newSet;
+    });
+    
     // Update personalized list with the queue song
     if (user) {
-      const recs = await getPersonalizedSongs(user.id, nextQueueSong);
+      const recs = await getPersonalizedSongs(user.id, nextQueueSong, listenedSongs);
       const filtered = recs.filter(s => !playedSongs.has(s.file_id));
       const newPersonalizedList = [nextQueueSong, ...filtered.slice(0, 9)];
       setPersonalizedList(newPersonalizedList);
@@ -368,6 +400,14 @@ const handleNext = async () => {
     setLastPlayedSongDismissed(false);
     recordListeningHistory(nextSong.id);
 
+    // Add to listened songs and log
+    setListenedSongs(prev => {
+      const newSet = new Set(prev);
+      newSet.add(nextSong.id);
+      console.log('🎵 Listened Songs List:', Array.from(newSet));
+      return newSet;
+    });
+
     setPlayedSongs((prev) => {
       const updated = new Set(prev);
       updated.add(String(nextSong.file_id));
@@ -382,7 +422,7 @@ const handleNext = async () => {
 
     // If nearing end of list, fetch more recommendations
     if (nextIndex >= personalizedList.length - 3 && user) {
-      const newRecs = await getPersonalizedSongs(user.id, nextSong);
+      const newRecs = await getPersonalizedSongs(user.id, nextSong, listenedSongs);
       const filtered = newRecs.filter(song => !playedSongs.has(song.file_id));
       if (filtered.length > 0) {
         setPersonalizedList(prev => [...prev, ...filtered.slice(0, 6)]);
@@ -391,7 +431,7 @@ const handleNext = async () => {
   } else {
     // If we've reached the end of personalized list, get new recommendations
     if (user && currentSong) {
-      const newRecs = await getPersonalizedSongs(user.id, currentSong);
+      const newRecs = await getPersonalizedSongs(user.id, currentSong, listenedSongs);
       const filtered = newRecs.filter(song => !playedSongs.has(song.file_id));
       
       if (filtered.length > 0) {
@@ -400,6 +440,14 @@ const handleNext = async () => {
         setIsPlaying(true);
         setLastPlayedSongDismissed(false);
         recordListeningHistory(nextSong.id);
+        
+        // Add to listened songs and log
+        setListenedSongs(prev => {
+          const newSet = new Set(prev);
+          newSet.add(nextSong.id);
+          console.log('🎵 Listened Songs List:', Array.from(newSet));
+          return newSet;
+        });
         
         // Create new personalized list starting with this song
         const newPersonalizedList = [nextSong, ...filtered.slice(1, 10)];
