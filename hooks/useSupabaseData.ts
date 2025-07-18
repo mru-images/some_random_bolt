@@ -123,16 +123,18 @@ async function getPersonalizedSongs(userId: string, currentSong: Song) {
       // 👁 Views Boost
       score += (song.views || 0) / 1000;
 
+      // Add some randomness to avoid always getting the same recommendations
+      score += Math.random() * 5;
       return { song, score };
     });
 
-  // 3. Sort and return top 5
+  // 3. Sort and return top 10 for better variety
   const top5 = recommendations
     .sort((a, b) => b.score - a.score)
-    .slice(0, 5)
+    .slice(0, 10)
     .map((entry) => entry.song);
 
-  console.log('🎵 Personalized Top 5 Songs:', top5);
+  console.log('🎵 Personalized Top 10 Songs:', top5);
   return top5;
 }
 

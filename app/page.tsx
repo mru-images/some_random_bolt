@@ -1,4 +1,4 @@
- 'use client'
+'use client'
 
 import React, { useState, createContext, useContext, useEffect,useRef } from 'react';
 import { Home as HomeIcon, Search, Settings } from 'lucide-react';
@@ -72,6 +72,7 @@ function MusicPlayerContent() {
   const [recommendedQueue, setRecommendedQueue] = useState<Song[]>([])
   const [playedSongs, setPlayedSongs] = useState<Set<string>>(new Set())  
   const [personalizedList, setPersonalizedList] = useState<Song[]>([]);
+  const [currentSongIndex, setCurrentSongIndex] = useState<number>(0);
   
 const loadMoreSongs = () => {
   setDisplayCount(prev => prev + 15);
@@ -207,7 +208,9 @@ const handleSongPlay = async (song: Song) => {
   if (user) {
     const recs = await getPersonalizedSongs(user.id, song);
     const filtered = recs.filter(s => !playedSongs.has(s.file_id));
-    setPersonalizedList([song, ...filtered.slice(0, 5)]);
+    const newPersonalizedList = [song, ...filtered.slice(0, 9)]; // Get more songs
+    setPersonalizedList(newPersonalizedList);
+    setCurrentSongIndex(0); // Reset to first song
   }
 };
 
@@ -248,28 +251,34 @@ const handleSongPlay = async (song: Song) => {
 const handlePrevious = () => {
   if (!currentSong) return;
 
-  const currentIndex = personalizedList.findIndex(song => song.id === currentSong.id);
-  const prevIndex = currentIndex > 0 ? currentIndex - 1 : 0;
-  const prevSong = personalizedList[prevIndex];
+  // Check if there's a previous song in the personalized list
+  if (currentSongIndex > 0) {
+    const prevIndex = currentSongIndex - 1;
+    const prevSong = personalizedList[prevIndex];
+    
+    if (prevSong) {
+      setCurrentSong(prevSong);
+      setCurrentSongIndex(prevIndex);
+      setIsPlaying(true);
+      setLastPlayedSongDismissed(false);
+      recordListeningHistory(prevSong.id);
 
-  // Only play if it's not the same as current
-  if (prevSong && prevSong.id !== currentSong.id) {
-    setCurrentSong(prevSong);
-    setIsPlaying(true);
-    setLastPlayedSongDismissed(false);
-    recordListeningHistory(prevSong.id);
+      setPlayedSongs((prev) => {
+        const updated = new Set(prev);
+        updated.add(String(prevSong.file_id));
+        return updated;
+      });
 
-    setPlayedSongs((prev) => {
-      const updated = new Set(prev);
-      updated.add(String(prevSong.file_id));
-      return updated;
-    });
-
-    // Preload image
-    if (!imageUrls[prevSong.img_id]) {
-      const newUrl = `/api/image-proxy?fileid=${prevSong.img_id}`;
-      setImageUrls(prev => ({ ...prev, [prevSong.img_id]: newUrl }));
+      // Preload image
+      if (!imageUrls[prevSong.img_id]) {
+        const newUrl = `/api/image-proxy?fileid=${prevSong.img_id}`;
+        setImageUrls(prev => ({ ...prev, [prevSong.img_id]: newUrl }));
+      }
     }
+  } else {
+    // If at the beginning, just restart current song
+    setCurrentTime(0);
+    setIsPlaying(true);
   }
 };
 
@@ -331,6 +340,15 @@ const handleNext = async () => {
     setLastPlayedSongDismissed(false);
     recordListeningHistory(nextQueueSong.id);
     
+    // Update personalized list with the queue song
+    if (user) {
+      const recs = await getPersonalizedSongs(user.id, nextQueueSong);
+      const filtered = recs.filter(s => !playedSongs.has(s.file_id));
+      const newPersonalizedList = [nextQueueSong, ...filtered.slice(0, 9)];
+      setPersonalizedList(newPersonalizedList);
+      setCurrentSongIndex(0);
+    }
+    
     // Preload image
     if (!imageUrls[nextQueueSong.img_id]) {
       const newUrl = `/api/image-proxy?fileid=${nextQueueSong.img_id}`;
@@ -339,16 +357,22 @@ const handleNext = async () => {
     return;
   }
 
-  // If no queue, proceed with normal next song logic
-   const currentIndex = personalizedList.findIndex(song => song.id === currentSong.id);
-  const nextIndex = currentIndex + 1;
+  // If no queue, proceed with personalized list
+  const nextIndex = currentSongIndex + 1;
 
   if (nextIndex < personalizedList.length) {
     const nextSong = personalizedList[nextIndex];
     setCurrentSong(nextSong);
+    setCurrentSongIndex(nextIndex);
     setIsPlaying(true);
     setLastPlayedSongDismissed(false);
     recordListeningHistory(nextSong.id);
+
+    setPlayedSongs((prev) => {
+      const updated = new Set(prev);
+      updated.add(String(nextSong.file_id));
+      return updated;
+    });
 
     // Preload image
     if (!imageUrls[nextSong.img_id]) {
@@ -356,12 +380,43 @@ const handleNext = async () => {
       setImageUrls(prev => ({ ...prev, [nextSong.img_id]: newUrl }));
     }
 
-    // If nearing end, fetch more
-    if (nextIndex >= personalizedList.length - 2 && user) {
+    // If nearing end of list, fetch more recommendations
+    if (nextIndex >= personalizedList.length - 3 && user) {
       const newRecs = await getPersonalizedSongs(user.id, nextSong);
       const filtered = newRecs.filter(song => !playedSongs.has(song.file_id));
       if (filtered.length > 0) {
-        setPersonalizedList(prev => [...prev, ...filtered.slice(0, 5)]);
+        setPersonalizedList(prev => [...prev, ...filtered.slice(0, 6)]);
+      }
+    }
+  } else {
+    // If we've reached the end of personalized list, get new recommendations
+    if (user && currentSong) {
+      const newRecs = await getPersonalizedSongs(user.id, currentSong);
+      const filtered = newRecs.filter(song => !playedSongs.has(song.file_id));
+      
+      if (filtered.length > 0) {
+        const nextSong = filtered[0];
+        setCurrentSong(nextSong);
+        setIsPlaying(true);
+        setLastPlayedSongDismissed(false);
+        recordListeningHistory(nextSong.id);
+        
+        // Create new personalized list starting with this song
+        const newPersonalizedList = [nextSong, ...filtered.slice(1, 10)];
+        setPersonalizedList(newPersonalizedList);
+        setCurrentSongIndex(0);
+        
+        setPlayedSongs((prev) => {
+          const updated = new Set(prev);
+          updated.add(String(nextSong.file_id));
+          return updated;
+        });
+        
+        // Preload image
+        if (!imageUrls[nextSong.img_id]) {
+          const newUrl = `/api/image-proxy?fileid=${nextSong.img_id}`;
+          setImageUrls(prev => ({ ...prev, [nextSong.img_id]: newUrl }));
+        }
       }
     }
   }
@@ -385,24 +440,8 @@ const handleNext = async () => {
   };
 
   const handleSongEnd = async () => {
-  if (recommendedQueue.length > 0) {
-    const next = recommendedQueue[0];
-    setRecommendedQueue((prev) => prev.slice(1));
-    handleSongPlay(next);
-  } else {
-    if (currentSong && user) {
-      const newRecs = await getPersonalizedSongs(user.id, currentSong);
-      const filtered = newRecs.filter(
-        (s) => !playedSongs.has(s.file_id)
-      );
-      const nextQueue = filtered.slice(0, 5);
-
-      if (nextQueue.length > 0) {
-        setRecommendedQueue(nextQueue.slice(1));
-        handleSongPlay(nextQueue[0]);
-      }
-    }
-  }
+    // When a song ends, automatically play the next one
+    await handleNext();
 };
 
   const renderContent = () => {
